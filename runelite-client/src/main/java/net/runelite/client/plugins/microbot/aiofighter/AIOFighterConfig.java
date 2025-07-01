@@ -146,6 +146,7 @@ public interface AIOFighterConfig extends Config {
     default boolean toggleCannon() {
         return false;
     }
+
     @ConfigItem(
         keyName = "EquipArrows",
         name = "Auto equip arrows",
@@ -153,7 +154,7 @@ public interface AIOFighterConfig extends Config {
         position = 5,
         section = combatSection
     )
-    default boolean toggleEquipArrow() {
+    default boolean toggleEquipArrows() {
         return false;
     }
 
