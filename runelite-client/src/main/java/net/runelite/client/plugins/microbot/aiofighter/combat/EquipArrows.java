@@ -20,7 +20,7 @@ public class EquipArrows extends Script {
                 if (!super.run() || !config.toggleEquipArrow()) return;
                 if (event.getType() == ChatMessageType.GAMEMESSAGE) {
                     String msg = event.getMessage().toLowerCase();
-                    if (msg.contains("you have run out of arrows")) {
+                    if (msg.contains("there is no ammo left in your quiver")) {
                         if (Rs2Inventory.hasItem("arrow")) {
                             Rs2ItemModel arrowItem = Rs2Inventory.get("arrow");
                             if (arrowItem != null) {
