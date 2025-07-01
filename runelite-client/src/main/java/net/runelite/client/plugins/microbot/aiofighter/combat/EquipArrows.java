@@ -7,6 +7,7 @@ import net.runelite.client.plugins.microbot.util.equipment.Rs2Equipment;
 import net.runelite.client.plugins.microbot.util.player.Rs2Player;
 import net.runelite.client.plugins.microbot.util.inventory.Rs2Inventory;
 import net.runelite.client.plugins.microbot.util.inventory.Rs2ItemModel;
+import net.runelite.client.plugins.microbot.api.ChatMessageType;
 
 import java.util.concurrent.TimeUnit;
 
@@ -16,11 +17,16 @@ public class EquipArrows extends Script {
         mainScheduledFuture = scheduledExecutorService.scheduleWithFixedDelay(() -> {
             try {
                 if (!Microbot.isLoggedIn()) return;
-                if (!super.run()) return;
-                if (Rs2Inventory.hasItem("arrow")) {
-                    Rs2ItemModel arrowItem = Rs2Inventory.get("arrow");
-                    if (arrowItem != null) {
-                        Rs2Inventory.wield(arrowItem.getName());
+                if (!super.run() || !config.toggleEquipArrow()) return;
+                if (event.getType() == ChatMessageType.GAMEMESSAGE) {
+                    String msg = event.getMessage().toLowerCase();
+                    if (msg.contains("you have run out of arrows")) {
+                        if (Rs2Inventory.hasItem("arrow")) {
+                            Rs2ItemModel arrowItem = Rs2Inventory.get("arrow");
+                            if (arrowItem != null) {
+                                Rs2Inventory.wield(arrowItem.getName());
+                            }
+                        }
                     }
                 }
                 // if (Rs2Inventory.hasItem("Iron arrow")) {
