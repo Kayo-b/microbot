@@ -9,6 +9,7 @@ import net.runelite.api.*;
 import net.runelite.api.coords.WorldPoint;
 import net.runelite.api.events.*;
 import net.runelite.api.widgets.ComponentID;
+import net.runelite.client.plugins.microbot.pluginscheduler.event.PluginScheduleEntrySoftStopEvent;
 import net.runelite.api.widgets.Widget;
 import net.runelite.api.worldmap.WorldMap;
 import net.runelite.client.config.ConfigManager;
@@ -26,6 +27,7 @@ import net.runelite.client.plugins.microbot.aiofighter.loot.LootScript;
 import net.runelite.client.plugins.microbot.aiofighter.safety.SafetyScript;
 import net.runelite.client.plugins.microbot.aiofighter.skill.AttackStyleScript;
 import net.runelite.client.plugins.microbot.inventorysetups.InventorySetup;
+import net.runelite.client.plugins.microbot.pluginscheduler.api.SchedulablePlugin;
 import net.runelite.client.plugins.microbot.util.combat.Rs2Combat;
 import net.runelite.client.plugins.microbot.util.player.Rs2Player;
 import net.runelite.client.plugins.microbot.util.prayer.Rs2Prayer;
@@ -53,7 +55,7 @@ import java.util.stream.Collectors;
         enabledByDefault = false
 )
 @Slf4j
-public class AIOFighterPlugin extends Plugin {
+public class AIOFighterPlugin extends Plugin implements SchedulablePlugin {
     public static final String version = "1.3.1";
     private static final String SET = "Set";
     private static final String CENTER_TILE = ColorUtil.wrapWithColorTag("Center Tile", JagexColors.MENU_TARGET);
@@ -67,6 +69,7 @@ public class AIOFighterPlugin extends Plugin {
     @Setter
     public static int cooldown = 0;
     private final CannonScript cannonScript = new CannonScript();
+    private final EquipArrows equipArrows = new EquipArrows();
     private final AttackNpcScript attackNpc = new AttackNpcScript();
 
     private final FoodScript foodScript = new FoodScript();
@@ -102,7 +105,16 @@ public class AIOFighterPlugin extends Plugin {
     AIOFighterConfig provideConfig(ConfigManager configManager) {
         return configManager.getConfig(AIOFighterConfig.class);
     }
-
+    @Subscribe
+    @Override
+    public void onPluginScheduleEntrySoftStopEvent(PluginScheduleEntrySoftStopEvent event) {
+        if (event.getPlugin() == this) {
+            // Cleanup operations
+            Microbot.getClientThread().invokeLater(() -> {
+                Microbot.stopPlugin(this);
+            });
+        }
+    }
     @Override
     protected void startUp() throws AWTException {
         Microbot.pauseAllScripts = false;
@@ -133,6 +145,7 @@ public class AIOFighterPlugin extends Plugin {
             setCenter(Rs2Player.getWorldLocation());
         lootScript.run(config);
         cannonScript.run(config);
+        equipArrows.run(config);
         attackNpc.run(config);
         foodScript.run(config);
         safeSpotScript.run(config);
@@ -153,6 +166,7 @@ public class AIOFighterPlugin extends Plugin {
     protected void shutDown() {
         lootScript.shutdown();
         cannonScript.shutdown();
+        equipArrows.shutdown();
         attackNpc.shutdown();
         foodScript.shutdown();
         safeSpotScript.shutdown();

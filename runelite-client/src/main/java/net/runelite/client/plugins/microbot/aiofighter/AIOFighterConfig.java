@@ -147,12 +147,23 @@ public interface AIOFighterConfig extends Config {
         return false;
     }
 
+    @ConfigItem(
+        keyName = "EquipArrows",
+        name = "Auto equip arrows",
+        description = "Automatically equips arrows when they run out.",
+        position = 5,
+        section = combatSection
+    )
+    default boolean toggleEquipArrows() {
+        return false;
+    }
+
     //safe spot
     @ConfigItem(
             keyName = "Safe Spot",
             name = "Safe Spot",
             description = "Shift Right-click the ground to select the safe spot tile",
-            position = 5,
+            position = 6,
             section = combatSection
     )
     default boolean toggleSafeSpot() {
@@ -164,7 +175,7 @@ public interface AIOFighterConfig extends Config {
             keyName = "PlayStyle",
             name = "Play Style",
             description = "Play Style",
-            position = 6,
+            position = 7,
             section = combatSection
     )
     default PlayStyle playStyle() {
@@ -175,7 +186,7 @@ public interface AIOFighterConfig extends Config {
             keyName = "ReachableNpcs",
             name = "Only attack reachable npcs",
             description = "Only attack npcs that we can reach with melee",
-            position = 7,
+            position = 8,
             section = combatSection
     )
     default boolean attackReachableNpcs() {
@@ -988,5 +999,3 @@ public interface AIOFighterConfig extends Config {
     }
 
 }
-
-
