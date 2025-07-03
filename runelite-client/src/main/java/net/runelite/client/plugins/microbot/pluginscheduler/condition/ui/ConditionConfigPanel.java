@@ -1732,6 +1732,7 @@ public class ConditionConfigPanel extends JPanel {
         try {
             // Create appropriate condition based on the type
             if ("Location".equals(selectedCategory)) {
+                Microbot.log("localConfigPanel",localConfigPanel.toString());
                 condition = LocationConditionUtil.createLocationCondition(localConfigPanel);
             } else if ("Varbit".equals(selectedCategory)) {
                 

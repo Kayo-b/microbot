@@ -89,11 +89,20 @@ public class LocationConditionUtil {
             return;
         }
 
+        // Get the tabbed pane and select the appropriate tab
+        JTabbedPane tabbedPane = (JTabbedPane) panel.getClientProperty("locationTabbedPane");
+        if (tabbedPane == null) {
+            return;
+        }
+
         if (condition instanceof PositionCondition) {
+            tabbedPane.setSelectedIndex(0); // Select Position tab
             setupPositionCondition(panel, (PositionCondition) condition);
         } else if (condition instanceof AreaCondition) {
+            tabbedPane.setSelectedIndex(1); // Select Area tab
             setupAreaCondition(panel, (AreaCondition) condition);
         } else if (condition instanceof RegionCondition) {
+            tabbedPane.setSelectedIndex(2); // Select Region tab
             setupRegionCondition(panel, (RegionCondition) condition);
         }
     }
@@ -102,19 +111,32 @@ public class LocationConditionUtil {
      * Sets up a position condition panel with values from an existing condition
      */
     private static void setupPositionCondition(JPanel panel, PositionCondition condition) {
-        JSpinner xSpinner = (JSpinner) panel.getClientProperty("posXSpinner");
-        JSpinner ySpinner = (JSpinner) panel.getClientProperty("posYSpinner");
-        JSpinner zSpinner = (JSpinner) panel.getClientProperty("posZSpinner");
-        JSpinner radiusSpinner = (JSpinner) panel.getClientProperty("posRadiusSpinner");
+        // Get the tabbed pane and the position panel
+        JTabbedPane tabbedPane = (JTabbedPane) panel.getClientProperty("locationTabbedPane");
+        if (tabbedPane == null) {
+            return;
+        }
         
-        if (xSpinner != null && ySpinner != null && zSpinner != null && radiusSpinner != null) {
+        JPanel positionPanel = (JPanel) tabbedPane.getComponentAt(0); // Position tab is at index 0
+        
+        JSpinner xSpinner = (JSpinner) positionPanel.getClientProperty("positionXSpinner");
+        JSpinner ySpinner = (JSpinner) positionPanel.getClientProperty("positionYSpinner");
+        JSpinner planeSpinner = (JSpinner) positionPanel.getClientProperty("positionPlaneSpinner");
+        JSpinner distanceSpinner = (JSpinner) positionPanel.getClientProperty("positionDistanceSpinner");
+        JTextField nameField = (JTextField) positionPanel.getClientProperty("positionNameField");
+        
+        if (xSpinner != null && ySpinner != null && planeSpinner != null && distanceSpinner != null) {
             WorldPoint position = condition.getTargetPosition();
             if (position != null) {
                 xSpinner.setValue(position.getX());
                 ySpinner.setValue(position.getY());
-                zSpinner.setValue(position.getPlane());
+                planeSpinner.setValue(position.getPlane());
             }
-            radiusSpinner.setValue(condition.getMaxDistance());
+            distanceSpinner.setValue(condition.getMaxDistance());
+        }
+        
+        if (nameField != null) {
+            nameField.setText(condition.getName());
         }
     }
 
@@ -122,25 +144,36 @@ public class LocationConditionUtil {
      * Sets up an area condition panel with values from an existing condition
      */
     private static void setupAreaCondition(JPanel panel, AreaCondition condition) {
-        JSpinner x1Spinner = (JSpinner) panel.getClientProperty("areaX1Spinner");
-        JSpinner y1Spinner = (JSpinner) panel.getClientProperty("areaY1Spinner");
-        JSpinner z1Spinner = (JSpinner) panel.getClientProperty("areaZ1Spinner");
-        JSpinner x2Spinner = (JSpinner) panel.getClientProperty("areaX2Spinner");
-        JSpinner y2Spinner = (JSpinner) panel.getClientProperty("areaY2Spinner");
-        JSpinner z2Spinner = (JSpinner) panel.getClientProperty("areaZ2Spinner");
+        // Get the tabbed pane and the area panel
+        JTabbedPane tabbedPane = (JTabbedPane) panel.getClientProperty("locationTabbedPane");
+        if (tabbedPane == null) {
+            return;
+        }
         
-        if (x1Spinner != null && y1Spinner != null && z1Spinner != null &&
-            x2Spinner != null && y2Spinner != null && z2Spinner != null) {
+        JPanel areaPanel = (JPanel) tabbedPane.getComponentAt(1); // Area tab is at index 1
+        
+        JSpinner x1Spinner = (JSpinner) areaPanel.getClientProperty("areaX1Spinner");
+        JSpinner y1Spinner = (JSpinner) areaPanel.getClientProperty("areaY1Spinner");
+        JSpinner x2Spinner = (JSpinner) areaPanel.getClientProperty("areaX2Spinner");
+        JSpinner y2Spinner = (JSpinner) areaPanel.getClientProperty("areaY2Spinner");
+        JSpinner planeSpinner = (JSpinner) areaPanel.getClientProperty("areaPlaneSpinner");
+        JTextField nameField = (JTextField) areaPanel.getClientProperty("areaNameField");
+        
+        if (x1Spinner != null && y1Spinner != null && x2Spinner != null && 
+            y2Spinner != null && planeSpinner != null) {
             
             WorldArea area = condition.getArea();
             if (area != null) {
                 x1Spinner.setValue(area.getX());
                 y1Spinner.setValue(area.getY());
-                z1Spinner.setValue(area.getPlane());
+                planeSpinner.setValue(area.getPlane());
                 x2Spinner.setValue(area.getX() + area.getWidth() - 1);
                 y2Spinner.setValue(area.getY() + area.getHeight() - 1);
-                z2Spinner.setValue(area.getPlane());
             }
+        }
+        
+        if (nameField != null) {
+            nameField.setText(condition.getName());
         }
     }
 
@@ -148,8 +181,16 @@ public class LocationConditionUtil {
      * Sets up a region condition panel with values from an existing condition
      */
     private static void setupRegionCondition(JPanel panel, RegionCondition condition) {
-        JTextField regionIdsField = (JTextField) panel.getClientProperty("regionIdsField");
-        JTextField nameField = (JTextField) panel.getClientProperty("regionNameField");
+        // Get the tabbed pane and the region panel
+        JTabbedPane tabbedPane = (JTabbedPane) panel.getClientProperty("locationTabbedPane");
+        if (tabbedPane == null) {
+            return;
+        }
+        
+        JPanel regionPanel = (JPanel) tabbedPane.getComponentAt(2); // Region tab is at index 2
+        
+        JTextField regionIdsField = (JTextField) regionPanel.getClientProperty("regionIdsField");
+        JTextField nameField = (JTextField) regionPanel.getClientProperty("regionNameField");
         
         if (regionIdsField != null && condition != null) {
             // Format the region IDs as a comma-separated string
@@ -613,11 +654,19 @@ public class LocationConditionUtil {
      * Creates a PositionCondition from the panel configuration
      */
     public static PositionCondition createPositionCondition(JPanel configPanel) {
-        JSpinner xSpinner = (JSpinner) configPanel.getClientProperty("positionXSpinner");
-        JSpinner ySpinner = (JSpinner) configPanel.getClientProperty("positionYSpinner");
-        JSpinner planeSpinner = (JSpinner) configPanel.getClientProperty("positionPlaneSpinner");
-        JSpinner distanceSpinner = (JSpinner) configPanel.getClientProperty("positionDistanceSpinner");
-        JTextField nameField = (JTextField) configPanel.getClientProperty("positionNameField");
+        // Get the tabbed pane and the position panel
+        JTabbedPane tabbedPane = (JTabbedPane) configPanel.getClientProperty("locationTabbedPane");
+        if (tabbedPane == null) {
+            throw new IllegalStateException("Location condition panel not properly configured - no tabbed pane found");
+        }
+        
+        JPanel positionPanel = (JPanel) tabbedPane.getComponentAt(0); // Position tab is at index 0
+        
+        JSpinner xSpinner = (JSpinner) positionPanel.getClientProperty("positionXSpinner");
+        JSpinner ySpinner = (JSpinner) positionPanel.getClientProperty("positionYSpinner");
+        JSpinner planeSpinner = (JSpinner) positionPanel.getClientProperty("positionPlaneSpinner");
+        JSpinner distanceSpinner = (JSpinner) positionPanel.getClientProperty("positionDistanceSpinner");
+        JTextField nameField = (JTextField) positionPanel.getClientProperty("positionNameField");
         
         if (xSpinner == null || ySpinner == null || planeSpinner == null || distanceSpinner == null) {
             throw new IllegalStateException("Position condition panel not properly configured");
@@ -641,12 +690,20 @@ public class LocationConditionUtil {
      * Creates an AreaCondition from the panel configuration
      */
     public static AreaCondition createAreaCondition(JPanel configPanel) {
-        JSpinner x1Spinner = (JSpinner) configPanel.getClientProperty("areaX1Spinner");
-        JSpinner y1Spinner = (JSpinner) configPanel.getClientProperty("areaY1Spinner");
-        JSpinner x2Spinner = (JSpinner) configPanel.getClientProperty("areaX2Spinner");
-        JSpinner y2Spinner = (JSpinner) configPanel.getClientProperty("areaY2Spinner");
-        JSpinner planeSpinner = (JSpinner) configPanel.getClientProperty("areaPlaneSpinner");
-        JTextField nameField = (JTextField) configPanel.getClientProperty("areaNameField");
+        // Get the tabbed pane and the area panel
+        JTabbedPane tabbedPane = (JTabbedPane) configPanel.getClientProperty("locationTabbedPane");
+        if (tabbedPane == null) {
+            throw new IllegalStateException("Location condition panel not properly configured - no tabbed pane found");
+        }
+        
+        JPanel areaPanel = (JPanel) tabbedPane.getComponentAt(1); // Area tab is at index 1
+        
+        JSpinner x1Spinner = (JSpinner) areaPanel.getClientProperty("areaX1Spinner");
+        JSpinner y1Spinner = (JSpinner) areaPanel.getClientProperty("areaY1Spinner");
+        JSpinner x2Spinner = (JSpinner) areaPanel.getClientProperty("areaX2Spinner");
+        JSpinner y2Spinner = (JSpinner) areaPanel.getClientProperty("areaY2Spinner");
+        JSpinner planeSpinner = (JSpinner) areaPanel.getClientProperty("areaPlaneSpinner");
+        JTextField nameField = (JTextField) areaPanel.getClientProperty("areaNameField");
         
         if (x1Spinner == null || y1Spinner == null || x2Spinner == null || y2Spinner == null || planeSpinner == null) {
             throw new IllegalStateException("Area condition panel not properly configured");
@@ -669,8 +726,16 @@ public class LocationConditionUtil {
      * Creates a RegionCondition from the panel configuration
      */
     public static RegionCondition createRegionCondition(JPanel configPanel) {
-        JTextField regionIdsField = (JTextField) configPanel.getClientProperty("regionIdsField");
-        JTextField nameField = (JTextField) configPanel.getClientProperty("regionNameField");
+        // Get the tabbed pane and the region panel
+        JTabbedPane tabbedPane = (JTabbedPane) configPanel.getClientProperty("locationTabbedPane");
+        if (tabbedPane == null) {
+            throw new IllegalStateException("Location condition panel not properly configured - no tabbed pane found");
+        }
+        
+        JPanel regionPanel = (JPanel) tabbedPane.getComponentAt(2); // Region tab is at index 2
+        
+        JTextField regionIdsField = (JTextField) regionPanel.getClientProperty("regionIdsField");
+        JTextField nameField = (JTextField) regionPanel.getClientProperty("regionNameField");
         
         if (regionIdsField == null) {
             throw new IllegalStateException("Region condition panel not properly configured");
