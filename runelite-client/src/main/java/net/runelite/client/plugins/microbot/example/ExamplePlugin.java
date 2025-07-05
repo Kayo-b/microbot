@@ -8,6 +8,11 @@ import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
 import net.runelite.client.ui.overlay.OverlayManager;
+import net.runelite.client.plugins.microbot.Microbot;
+import net.runelite.client.plugins.microbot.pluginscheduler.api.SchedulablePlugin;
+import net.runelite.client.plugins.microbot.pluginscheduler.event.PluginScheduleEntrySoftStopEvent;
+import net.runelite.api.coords.WorldPoint;
+import net.runelite.client.plugins.microbot.util.walker.Rs2Walker;
 
 import javax.inject.Inject;
 import java.awt.*;
@@ -19,7 +24,7 @@ import java.awt.*;
         enabledByDefault = false
 )
 @Slf4j
-public class ExamplePlugin extends Plugin {
+public class ExamplePlugin extends Plugin implements SchedulablePlugin {
     @Inject
     private ExampleConfig config;
     @Provides
@@ -35,6 +40,27 @@ public class ExamplePlugin extends Plugin {
     @Inject
     ExampleScript exampleScript;
 
+    @Subscribe
+    @Override
+    public void onPluginScheduleEntrySoftStopEvent(PluginScheduleEntrySoftStopEvent event) {
+        if (event.getPlugin() == this) {
+            // Cleanup operations
+            Microbot.getClientThread().invokeLater(() -> {
+                Microbot.stopPlugin(this);
+            });
+        }
+    }
+
+    private void startWalkingToConfigLocation() {
+        WorldPoint destination = new WorldPoint(config.walkX(), config.walkY(), config.walkZ());
+        
+        if (destination.getX() != 0 || destination.getY() != 0 || destination.getPlane() != 0) {
+            Rs2Walker.walkWithState(destination);
+            Microbot.log("Walking to configured location: " + destination);
+        } else {
+            Microbot.log("No coordinates configured, staying at current location");
+        }
+    }
 
     @Override
     protected void startUp() throws AWTException {
@@ -42,6 +68,7 @@ public class ExamplePlugin extends Plugin {
             overlayManager.add(exampleOverlay);
             exampleOverlay.myButton.hookMouseListener();
         }
+        startWalkingToConfigLocation();
         exampleScript.run(config);
     }
 
