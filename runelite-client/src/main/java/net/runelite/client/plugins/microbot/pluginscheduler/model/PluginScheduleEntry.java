@@ -142,6 +142,12 @@ public class PluginScheduleEntry implements AutoCloseable {
     private int priority = 0; // Higher numbers = higher priority
     private boolean isDefault = false; // Flag to indicate if this is a default plugin        
 
+    // Scheduler coordinate override fields
+    private int schedulerX = 0;
+    private int schedulerY = 0;
+    private int schedulerZ = 0;
+    private boolean useSchedulerCoordinates = false;
+
     /**
      * Functional interface for handling successful plugin stop events
      */
@@ -467,6 +473,16 @@ public class PluginScheduleEntry implements AutoCloseable {
                     log.error("Plugin '{}' not found -> can't start plugin", name);
                     return false;
                 }                
+                
+                // inject scheduler coordinates if plugin supports it and coordinates are configured
+                if (plugin instanceof net.runelite.client.plugins.microbot.pluginscheduler.api.SchedulerCoordinates && isUseSchedulerCoordinates()) {
+                    net.runelite.client.plugins.microbot.pluginscheduler.api.SchedulerCoordinates coordPlugin = 
+                        (net.runelite.client.plugins.microbot.pluginscheduler.api.SchedulerCoordinates) plugin;
+                    coordPlugin.setSchedulerCoordinates(getSchedulerX(), getSchedulerY(), getSchedulerZ());
+                    Microbot.log("Injected scheduler coordinates into {}: {}, {}, {}", 
+                        name, getSchedulerX(), getSchedulerY(), getSchedulerZ());
+                }
+                
                 Microbot.startPlugin(plugin);
                 return false;
             });
@@ -2582,6 +2598,39 @@ public class PluginScheduleEntry implements AutoCloseable {
     public void setDefault(boolean isDefault) {        
         this.isDefault = isDefault;
     }
+    
+    public int getSchedulerX() {
+        return schedulerX;
+    }
+    
+    public void setSchedulerX(int schedulerX) {
+        this.schedulerX = schedulerX;
+    }
+    
+    public int getSchedulerY() {
+        return schedulerY;
+    }
+    
+    public void setSchedulerY(int schedulerY) {
+        this.schedulerY = schedulerY;
+    }
+    
+    public int getSchedulerZ() {
+        return schedulerZ;
+    }
+    
+    public void setSchedulerZ(int schedulerZ) {
+        this.schedulerZ = schedulerZ;
+    }
+    
+    public boolean isUseSchedulerCoordinates() {
+        return useSchedulerCoordinates;
+    }
+    
+    public void setUseSchedulerCoordinates(boolean useSchedulerCoordinates) {
+        this.useSchedulerCoordinates = useSchedulerCoordinates;
+    }
+    
     /**
     * Generic helper method to build condition diagnostics for both start and stop conditions
     * 

@@ -47,6 +47,11 @@ public class ScheduleFormPanel extends JPanel {
     private JSpinner prioritySpinner;
     private JCheckBox defaultPluginCheckbox;
 
+    private JCheckBox useCustomCoordinatesCheckbox;
+    private JTextField xCoordinateField;
+    private JTextField yCoordinateField;
+    private JTextField zCoordinateField;
+
     // New panel for editing plugin properties when one is selected
     private JPanel pluginPropertiesPanel;
     private JSpinner selectedPluginPrioritySpinner;
@@ -298,9 +303,15 @@ public class ScheduleFormPanel extends JPanel {
         pluginSettingsPanel.add(priorityPanel, BorderLayout.CENTER);
 
         formPanel.add(pluginSettingsPanel, gbc);
-        // Time condition type selection
+        
         gbc.gridx = 0;
         gbc.gridy = 2;
+        gbc.gridwidth = 4;
+        JPanel coordinatePanel = createCoordinateInputPanel();
+        formPanel.add(coordinatePanel, gbc);
+        
+        gbc.gridx = 0;
+        gbc.gridy = 3;
         gbc.gridwidth = 1;
         JLabel conditionTypeLabel = new JLabel("Schedule Type:");
         conditionTypeLabel.setForeground(Color.WHITE);
@@ -308,7 +319,7 @@ public class ScheduleFormPanel extends JPanel {
         formPanel.add(conditionTypeLabel, gbc);
 
         gbc.gridx = 1;
-        gbc.gridy = 2;
+        gbc.gridy = 3;
         gbc.gridwidth = 3;
         timeConditionTypeComboBox = new JComboBox<>(TIME_CONDITION_TYPES);
         timeConditionTypeComboBox.addActionListener(e -> updateConditionPanel());
@@ -316,7 +327,7 @@ public class ScheduleFormPanel extends JPanel {
 
         // Dynamic condition config panel
         gbc.gridx = 0;
-        gbc.gridy = 3;
+        gbc.gridy = 4;
         gbc.gridwidth = 4;
         conditionConfigPanel = new JPanel(new BorderLayout());
         conditionConfigPanel.setBackground(ColorScheme.DARKER_GRAY_COLOR);
@@ -335,7 +346,6 @@ public class ScheduleFormPanel extends JPanel {
         formPanel.add(conditionConfigPanel, gbc);
 
         
-
         // Wrap the formPanel in a scroll pane
         JScrollPane scrollPane = new JScrollPane(formPanel);
         scrollPane.setBorder(BorderFactory.createEmptyBorder());
@@ -885,32 +895,30 @@ public class ScheduleFormPanel extends JPanel {
             selectedPluginNameLabel.setText("Plugin: " + entry.getCleanName());
         }
         
-        // Set the flag to prevent update loops
         updatingValues = true;
         
         try {
             
             selectedPluginEnabledCheckbox.setSelected(entry.isEnabled());
             
-            // Update default checkbox first as it may impact the priority spinner
             selectedPluginDefaultCheckbox.setSelected(entry.isDefault());
             
-            // Then update priority spinner
             selectedPluginPrioritySpinner.setValue(entry.getPriority());
             
-            // Update other checkboxes
             selectedPluginRandomCheckbox.setSelected(entry.isAllowRandomScheduling());
             selectedPluginTimeStopCheckbox.setSelected(entry.isNeedsStopCondition());
             selectedPluginAllowContinueCheckbox.setSelected(entry.isAllowContinue());
             
-            // Update statistics
+            xCoordinateField.setText(String.valueOf(entry.getSchedulerX()));
+            yCoordinateField.setText(String.valueOf(entry.getSchedulerY()));
+            zCoordinateField.setText(String.valueOf(entry.getSchedulerZ()));
+            useCustomCoordinatesCheckbox.setSelected(entry.isUseSchedulerCoordinates()); 
+            
             updateStatistics();
         } finally {
-            // Reset the flag after all updates
             updatingValues = false;
         }
         
-        // Show the editor panel
         pluginPropertiesPanel.removeAll();
         pluginPropertiesPanel.add(editorPanel, BorderLayout.CENTER);
         pluginPropertiesPanel.revalidate();
@@ -940,82 +948,104 @@ public class ScheduleFormPanel extends JPanel {
         tabbedPane.setSelectedIndex(0);
     }
 
-    public PluginScheduleEntry getPluginFromForm(PluginScheduleEntry existingPlugin) {
-        String pluginName = (String) pluginComboBox.getSelectedItem();
-        if (pluginName == null || pluginName.isEmpty()) {
-            return null;
-        }
-        
-        // Get the selected time condition type
-        String selectedType = (String) timeConditionTypeComboBox.getSelectedItem();
-        TimeCondition timeCondition = null;
-        
-        // Create the appropriate time condition
-        if (CONDITION_DEFAULT.equals(selectedType)) {
-            // Default plugin with 1-second interval
-            timeCondition = new IntervalCondition(Duration.ofSeconds(1));
-        } else if (CONDITION_SPECIFIC_TIME.equals(selectedType)) {
-            timeCondition = TimeConditionPanelUtil.createSingleTriggerCondition(currentConditionPanel);
-        } else if (CONDITION_INTERVAL.equals(selectedType)) {
-            timeCondition = TimeConditionPanelUtil.createIntervalCondition(currentConditionPanel);
-        } else if (CONDITION_TIME_WINDOW.equals(selectedType)) {
-            timeCondition = TimeConditionPanelUtil.createTimeWindowCondition(currentConditionPanel);
-        } else if (CONDITION_DAY_OF_WEEK.equals(selectedType)) {
-            timeCondition = TimeConditionPanelUtil.createDayOfWeekCondition(currentConditionPanel);
-        }
-        
-        // If we couldn't create a time condition, return null
-        if (timeCondition == null) {
-            log.warn("Could not create time condition from form");
-            return null;
-        }
-   
-        // Get other settings
-        boolean randomScheduling = randomSchedulingCheckbox.isSelected();
-        boolean needsStopCondition = timeBasedStopConditionCheckbox.isSelected();
-        boolean allowContinue = allowContinueCheckbox.isSelected();
-        int priority = (Integer) prioritySpinner.getValue();
-        boolean isDefault = defaultPluginCheckbox.isSelected();
-        
-        // Create the plugin schedule entry
-        PluginScheduleEntry entry;
-        log.debug("values for PluginScheduleEntry entry {}\n priority {}\n isDefault {} \n needsStopCondition {} \n randomScheduling {}",pluginName,priority, isDefault, needsStopCondition, randomScheduling);
-        if (existingPlugin != null) {            
-            log.debug("Updating existing plugin entry");
-                
-            // Update the existing plugin with new values
-            existingPlugin.updatePrimaryTimeCondition(timeCondition);
-            existingPlugin.setAllowRandomScheduling(randomScheduling);
-            existingPlugin.setNeedsStopCondition(needsStopCondition);
-            existingPlugin.setAllowContinue(allowContinue);
-            existingPlugin.setPriority(priority);
-            existingPlugin.setDefault(isDefault);
-            entry = existingPlugin;
-        } else {
-
-            log.debug("Creating new plugin entry");
-            // Create a new plugin schedule entry
-            entry = new PluginScheduleEntry(
-                    pluginName,
-                    timeCondition,
-                    true,  // Enabled by default
-                    randomScheduling
-            );
-            entry.setNeedsStopCondition(needsStopCondition);
-            entry.setAllowContinue(allowContinue);
-            entry.setPriority(priority);
-            entry.setDefault(isDefault);
-        }
-        if (entry != null) {
-            randomSchedulingCheckbox.setSelected(entry.isAllowRandomScheduling());
-            timeBasedStopConditionCheckbox.setSelected(entry.isNeedsStopCondition());
-            allowContinueCheckbox.setSelected(entry.isAllowContinue());
-            prioritySpinner.setValue(entry.getPriority());
-            defaultPluginCheckbox.setSelected(entry.isDefault());
-            updatePropertiesPanel(entry);
-        }
-        return entry;
+public PluginScheduleEntry getPluginFromForm(PluginScheduleEntry existingPlugin) {
+    String pluginName = (String) pluginComboBox.getSelectedItem();
+    if (pluginName == null || pluginName.isEmpty()) {
+       return null;
     }
+    
+    boolean useCustomCoordinates = useCustomCoordinatesCheckbox.isSelected();
+    int coordinateX = 0, coordinateY = 0, coordinateZ = 0;
+
+    if (useCustomCoordinates) {
+        try {
+            coordinateX = Integer.parseInt(xCoordinateField.getText().trim());
+            coordinateY = Integer.parseInt(yCoordinateField.getText().trim());
+            coordinateZ = Integer.parseInt(zCoordinateField.getText().trim());
+        } catch (NumberFormatException e) {
+            log.warn("Invalid coordinate values, using defaults (0,0,0)");
+        }
+    }
+    
+    String selectedType = (String) timeConditionTypeComboBox.getSelectedItem();
+    TimeCondition timeCondition = null;
+    
+    if (CONDITION_DEFAULT.equals(selectedType)) {
+        timeCondition = new IntervalCondition(Duration.ofSeconds(1));
+    } else if (CONDITION_SPECIFIC_TIME.equals(selectedType)) {
+        timeCondition = TimeConditionPanelUtil.createSingleTriggerCondition(currentConditionPanel);
+    } else if (CONDITION_INTERVAL.equals(selectedType)) {
+        timeCondition = TimeConditionPanelUtil.createIntervalCondition(currentConditionPanel);
+    } else if (CONDITION_TIME_WINDOW.equals(selectedType)) {
+        timeCondition = TimeConditionPanelUtil.createTimeWindowCondition(currentConditionPanel);
+    } else if (CONDITION_DAY_OF_WEEK.equals(selectedType)) {
+        timeCondition = TimeConditionPanelUtil.createDayOfWeekCondition(currentConditionPanel);
+    }
+    
+    if (timeCondition == null) {
+        log.warn("Could not create time condition from form");
+        return null;
+    }
+
+    boolean randomScheduling = randomSchedulingCheckbox.isSelected();
+    boolean needsStopCondition = timeBasedStopConditionCheckbox.isSelected();
+    boolean allowContinue = allowContinueCheckbox.isSelected();
+    int priority = (Integer) prioritySpinner.getValue();
+    boolean isDefault = defaultPluginCheckbox.isSelected();
+    
+    PluginScheduleEntry entry;
+    log.debug("values for PluginScheduleEntry entry {}\n priority {}\n isDefault {} \n needsStopCondition {} \n randomScheduling {}",pluginName,priority, isDefault, needsStopCondition, randomScheduling);
+    if (existingPlugin != null) {            
+        log.debug("Updating existing plugin entry");
+            
+        existingPlugin.updatePrimaryTimeCondition(timeCondition);
+        existingPlugin.setAllowRandomScheduling(randomScheduling);
+        existingPlugin.setNeedsStopCondition(needsStopCondition);
+        existingPlugin.setAllowContinue(allowContinue);
+        existingPlugin.setPriority(priority);
+        existingPlugin.setDefault(isDefault);
+        
+        existingPlugin.setUseSchedulerCoordinates(useCustomCoordinates);
+        existingPlugin.setSchedulerX(coordinateX);
+        existingPlugin.setSchedulerY(coordinateY);
+        existingPlugin.setSchedulerZ(coordinateZ);
+        
+        entry = existingPlugin;
+    } else {
+
+        log.debug("Creating new plugin entry");
+        entry = new PluginScheduleEntry(
+                pluginName,
+                timeCondition,
+                true, 
+                randomScheduling
+        );
+        entry.setNeedsStopCondition(needsStopCondition);
+        entry.setAllowContinue(allowContinue);
+        entry.setPriority(priority);
+        entry.setDefault(isDefault);
+        
+        entry.setUseSchedulerCoordinates(useCustomCoordinates);
+        entry.setSchedulerX(coordinateX);
+        entry.setSchedulerY(coordinateY);
+        entry.setSchedulerZ(coordinateZ);
+    }
+    if (entry != null) {
+        randomSchedulingCheckbox.setSelected(entry.isAllowRandomScheduling());
+        timeBasedStopConditionCheckbox.setSelected(entry.isNeedsStopCondition());
+        allowContinueCheckbox.setSelected(entry.isAllowContinue());
+        prioritySpinner.setValue(entry.getPriority());
+        defaultPluginCheckbox.setSelected(entry.isDefault());
+        
+        useCustomCoordinatesCheckbox.setSelected(entry.isUseSchedulerCoordinates());
+        xCoordinateField.setText(String.valueOf(entry.getSchedulerX()));
+        yCoordinateField.setText(String.valueOf(entry.getSchedulerY()));
+        zCoordinateField.setText(String.valueOf(entry.getSchedulerZ()));
+        
+        updatePropertiesPanel(entry);
+    }
+    return entry;
+}
     
     /**
      * Updates the selected plugin with values from the properties panel
@@ -1030,7 +1060,6 @@ public class ScheduleFormPanel extends JPanel {
         int priority = (Integer) selectedPluginPrioritySpinner.getValue();
         boolean isDefault = selectedPluginDefaultCheckbox.isSelected();
         
-        // Update the plugin
         selectedPlugin.setEnabled(enabled);
         selectedPlugin.setAllowRandomScheduling(randomScheduling);
         selectedPlugin.setNeedsStopCondition(needsStopCondition);
@@ -1038,10 +1067,13 @@ public class ScheduleFormPanel extends JPanel {
         selectedPlugin.setPriority(priority);
         selectedPlugin.setDefault(isDefault);
         
-        // Save the changes
+        selectedPlugin.setSchedulerX(Integer.parseInt(xCoordinateField.getText()));
+        selectedPlugin.setSchedulerY(Integer.parseInt(yCoordinateField.getText()));
+        selectedPlugin.setSchedulerZ(Integer.parseInt(zCoordinateField.getText()));
+        selectedPlugin.setUseSchedulerCoordinates(useCustomCoordinatesCheckbox.isSelected()); 
+
         plugin.saveScheduledPlugins();
         
-        // Update the control button
         updateControlButton();
         
         // Notify the main window to refresh the table
@@ -1159,5 +1191,83 @@ public class ScheduleFormPanel extends JPanel {
         } else if (condition instanceof DayOfWeekCondition) {
             TimeConditionPanelUtil.setupTimeCondition(currentConditionPanel, (DayOfWeekCondition) condition);
         }
+    }
+
+    /**
+     * Creates a coordinate input panel for the scheduler
+     */
+    private JPanel createCoordinateInputPanel() {
+        JPanel panel = new JPanel(new GridBagLayout());
+        panel.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+        panel.setBorder(BorderFactory.createTitledBorder(
+                BorderFactory.createLineBorder(ColorScheme.MEDIUM_GRAY_COLOR),
+                "Coordinate Override",
+                TitledBorder.DEFAULT_JUSTIFICATION,
+                TitledBorder.DEFAULT_POSITION,
+                FontManager.getRunescapeBoldFont(),
+                Color.WHITE
+        ));
+
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.insets = new Insets(5, 5, 5, 5);
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+
+        useCustomCoordinatesCheckbox = new JCheckBox("Override plugin coordinates");
+        useCustomCoordinatesCheckbox.setForeground(Color.WHITE);
+        useCustomCoordinatesCheckbox.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+        useCustomCoordinatesCheckbox.setToolTipText("When enabled, these coordinates will override the plugin's config values");
+
+        gbc.gridx = 0;
+        gbc.gridy = 0;
+        gbc.gridwidth = 4;
+        panel.add(useCustomCoordinatesCheckbox, gbc);
+
+        gbc.gridwidth = 1;
+        gbc.gridy = 1;
+
+        // X 
+        gbc.gridx = 0;
+        JLabel xLabel = new JLabel("X:");
+        xLabel.setForeground(Color.WHITE);
+        panel.add(xLabel, gbc);
+
+        gbc.gridx = 1;
+        xCoordinateField = new JTextField("0", 8);
+        panel.add(xCoordinateField, gbc);
+
+        // Y
+        gbc.gridx = 2;
+        JLabel yLabel = new JLabel("Y:");
+        yLabel.setForeground(Color.WHITE);
+        panel.add(yLabel, gbc);
+
+        gbc.gridx = 3;
+        yCoordinateField = new JTextField("0", 8);
+        panel.add(yCoordinateField, gbc);
+
+        // Z
+        gbc.gridy = 2;
+        gbc.gridx = 0;
+        JLabel zLabel = new JLabel("Z:");
+        zLabel.setForeground(Color.WHITE);
+        panel.add(zLabel, gbc);
+
+        gbc.gridx = 1;
+        zCoordinateField = new JTextField("0", 8);
+        panel.add(zCoordinateField, gbc);
+
+        // enable/disable custom coord 
+        ActionListener toggleFields = e -> {
+            boolean enabled = useCustomCoordinatesCheckbox.isSelected();
+            xCoordinateField.setEnabled(enabled);
+            yCoordinateField.setEnabled(enabled);
+            zCoordinateField.setEnabled(enabled);
+        };
+        
+        useCustomCoordinatesCheckbox.addActionListener(toggleFields);
+        
+        toggleFields.actionPerformed(null);
+
+        return panel;
     }
 }
