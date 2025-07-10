@@ -21,6 +21,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
@@ -65,6 +66,7 @@ import net.runelite.client.plugins.microbot.pluginscheduler.ui.SchedulerPanel;
 import net.runelite.client.plugins.microbot.pluginscheduler.ui.SchedulerWindow;
 import net.runelite.client.plugins.microbot.pluginscheduler.ui.Antiban.AntibanDialogWindow;
 import net.runelite.client.plugins.microbot.pluginscheduler.ui.util.SchedulerUIUtils;
+import net.runelite.client.plugins.microbot.shortestpath.ShortestPathPlugin;
 import net.runelite.client.plugins.microbot.util.antiban.AntibanPlugin;
 import net.runelite.client.plugins.microbot.util.antiban.Rs2Antiban;
 import net.runelite.client.plugins.microbot.util.antiban.enums.Activity;
@@ -73,9 +75,12 @@ import net.runelite.client.plugins.microbot.util.antiban.enums.CombatSkills;
 import net.runelite.client.plugins.microbot.util.math.Rs2Random;
 import net.runelite.client.plugins.microbot.util.player.Rs2Player;
 import net.runelite.client.plugins.microbot.util.security.Login;
+import net.runelite.client.plugins.microbot.util.walker.Rs2Walker;
+import net.runelite.client.plugins.microbot.util.walker.WalkerState;
 import net.runelite.client.ui.ClientToolbar;
 import net.runelite.client.ui.NavigationButton;
 import net.runelite.client.util.ImageUtil;
+import net.runelite.api.coords.WorldPoint;
 
 @Slf4j
 @PluginDescriptor(name = PluginDescriptor.Mocrosoft + PluginDescriptor.VOX
@@ -1026,11 +1031,18 @@ public class SchedulerPlugin extends Plugin {
      * Continues the plugin starting process after stop condition checks
      */
     private void continueStartingPluginScheduleEntry(PluginScheduleEntry scheduledPlugin) {        
-        if (scheduledPlugin == null || currentState  != SchedulerState.STARTING_PLUGIN) {            
+        if (scheduledPlugin == null || (!currentState.equals(SchedulerState.STARTING_PLUGIN) && !currentState.equals(SchedulerState.WALKING_TO_COORDINATES))) {            
             setCurrentPlugin(null);
             setState(SchedulerState.SCHEDULING);                
             return;
         }
+        
+        // Check if we need to walk to coordinates first
+        if (currentState.equals(SchedulerState.STARTING_PLUGIN) && scheduledPlugin.isUseSchedulerCoordinates()) {
+            startWalkingToCoordinates(scheduledPlugin);
+            return;
+        }
+        
         Microbot.getClientThread().runOnClientThreadOptional(() -> {
             if (scheduledPlugin.isRunning()) {
                 log.info("\n\tPlugin started successfully: " + scheduledPlugin.getCleanName());    
@@ -2037,6 +2049,7 @@ public class SchedulerPlugin extends Plugin {
             // net.runelite.client.plugins.microbot.util.security
             int currentLoginIndex = Microbot.getClient().getLoginIndex();
             boolean tryMemberWorld =  config.worldType() == 2 || config.worldType() ==1 ; // TODO get correct one
+           
             tryMemberWorld = Login.activeProfile.isMember();
             if (currentLoginIndex == 4 || currentLoginIndex == 3) { // we are in the auth screen and cannot login
                 // 3 mean wrong authtifaction
@@ -2396,6 +2409,12 @@ public class SchedulerPlugin extends Plugin {
                 case STARTING_PLUGIN:
                     newState.setStateInformation(
                             currentPlugin != null ? "Starting " + currentPlugin.getCleanName() : "Starting plugin");
+                    break;
+
+                case WALKING_TO_COORDINATES:
+                    newState.setStateInformation(
+                            currentPlugin != null ? "Walking to coordinates before starting " + currentPlugin.getCleanName() 
+                                    : "Walking to coordinates before starting plugin");
                     break;
 
                 case BREAK:
@@ -3063,6 +3082,98 @@ public class SchedulerPlugin extends Plugin {
         return ""; // Empty string means success
     }
 
+    /**
+     * Starts walking to the specified coordinates before starting the plugin
+     */
+    private void startWalkingToCoordinates(PluginScheduleEntry scheduledPlugin) {
+        setState(SchedulerState.WALKING_TO_COORDINATES);
+        
+        WorldPoint targetLocation = new WorldPoint(
+            scheduledPlugin.getSchedulerX(), 
+            scheduledPlugin.getSchedulerY(), 
+            scheduledPlugin.getSchedulerZ()
+        );
+        
+        log.info("Walking to coordinates ({}, {}, {}) before starting plugin: {}", 
+            targetLocation.getX(), targetLocation.getY(), targetLocation.getPlane(), 
+            scheduledPlugin.getCleanName());
+            
+        // Check if we're already at the target location (within 3 tiles)
+        if (Rs2Player.getWorldLocation().distanceTo(targetLocation) <= 3) {
+            log.info("Already at target location, proceeding to start plugin: {}", scheduledPlugin.getCleanName());
+            setState(SchedulerState.STARTING_PLUGIN);
+            continueStartingPluginScheduleEntry(scheduledPlugin);
+            return;
+        }
+        
+        // Use Rs2Walker.walkWithState to actually start walking, not just set the target
+        // This will start the actual walking behavior with clicks and movement
+        log.info("Starting walking to coordinates: {}", targetLocation);
+        
+        // Monitor the walking progress on a separate thread
+        CompletableFuture.runAsync(() -> {
+            try {
+                // Start walking using walkWithState which triggers actual movement
+                WalkerState walkerState = Rs2Walker.walkWithState(targetLocation);
+                
+                // Wait for walking to complete or fail
+                boolean arrived = false;
+                int attempts = 0;
+                int maxAttempts = 300; // 5 minutes at 1 second intervals
+                
+                while (!arrived && attempts < maxAttempts) {
+                    Thread.sleep(1000);
+                    attempts++;
+                    
+                    // Check current walker state
+                    walkerState = Rs2Walker.walkWithState(targetLocation);
+                    
+                    // Check if we've arrived at the destination
+                    WorldPoint currentLocation = Rs2Player.getWorldLocation();
+                    if (currentLocation != null && currentLocation.distanceTo(targetLocation) <= 3) {
+                        arrived = true;
+                        break;
+                    }
+                    
+                    // Check walker state for completion or failure
+                    if (walkerState == WalkerState.ARRIVED) {
+                        arrived = true;
+                        break;
+                    } else if (walkerState == WalkerState.UNREACHABLE || walkerState == WalkerState.EXIT) {
+                        log.warn("Walking failed with state: {} for plugin: {}", walkerState, scheduledPlugin.getCleanName());
+                        break;
+                    }
+                    
+                    // Continue walking if still moving
+                    if (walkerState == WalkerState.MOVING) {
+                        continue;
+                    }
+                }
+                
+                if (arrived) {
+                    log.info("Arrived at target coordinates, starting plugin: {}", scheduledPlugin.getCleanName());
+                    Microbot.getClientThread().invokeLater(() -> {
+                        setState(SchedulerState.STARTING_PLUGIN);
+                        continueStartingPluginScheduleEntry(scheduledPlugin);
+                    });
+                } else {
+                    log.error("Failed to reach target coordinates within timeout or walking was cancelled for plugin: {}", 
+                        scheduledPlugin.getCleanName());
+                    Microbot.getClientThread().invokeLater(() -> {
+                        setCurrentPlugin(null);
+                        setState(SchedulerState.SCHEDULING);
+                    });
+                }
+            } catch (Exception e) {
+                log.error("Error monitoring walking progress for plugin {}: {}", 
+                    scheduledPlugin.getCleanName(), e.getMessage());
+                Microbot.getClientThread().invokeLater(() -> {
+                    setCurrentPlugin(null);
+                    setState(SchedulerState.SCHEDULING);
+                });
+            }
+        });
+    }
     /**
      * Register a stop completion callback with the given plugin schedule entry.
      * The callback will save the scheduled plugins state when a plugin stop is completed.

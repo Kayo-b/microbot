@@ -1201,7 +1201,7 @@ public PluginScheduleEntry getPluginFromForm(PluginScheduleEntry existingPlugin)
         panel.setBackground(ColorScheme.DARKER_GRAY_COLOR);
         panel.setBorder(BorderFactory.createTitledBorder(
                 BorderFactory.createLineBorder(ColorScheme.MEDIUM_GRAY_COLOR),
-                "Coordinate Override",
+                "Coordinate Walker",
                 TitledBorder.DEFAULT_JUSTIFICATION,
                 TitledBorder.DEFAULT_POSITION,
                 FontManager.getRunescapeBoldFont(),
@@ -1212,10 +1212,10 @@ public PluginScheduleEntry getPluginFromForm(PluginScheduleEntry existingPlugin)
         gbc.insets = new Insets(5, 5, 5, 5);
         gbc.fill = GridBagConstraints.HORIZONTAL;
 
-        useCustomCoordinatesCheckbox = new JCheckBox("Override plugin coordinates");
+        useCustomCoordinatesCheckbox = new JCheckBox("Walk to coordinates before plugin starts");
         useCustomCoordinatesCheckbox.setForeground(Color.WHITE);
         useCustomCoordinatesCheckbox.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-        useCustomCoordinatesCheckbox.setToolTipText("When enabled, these coordinates will override the plugin's config values");
+        useCustomCoordinatesCheckbox.setToolTipText("When enabled, the scheduler will walk to these coordinates before starting the plugin");
 
         gbc.gridx = 0;
         gbc.gridy = 0;
