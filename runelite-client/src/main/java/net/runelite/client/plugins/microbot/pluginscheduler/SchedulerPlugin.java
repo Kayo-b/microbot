@@ -159,6 +159,8 @@ public class SchedulerPlugin extends Plugin {
     private Optional<ZonedDateTime> breakStartTime = Optional.empty();
     // login tracking
     private Thread loginMonitor;
+    // Walking monitoring thread
+    private CompletableFuture<Void> walkingMonitorFuture;
     @Inject
     private Notifier notifier;
         @Override
@@ -298,6 +300,11 @@ public class SchedulerPlugin extends Plugin {
             this.loginMonitor.interrupt();
             this.loginMonitor = null;
         }
+        // Cancel walking monitoring thread
+        if (walkingMonitorFuture != null && !walkingMonitorFuture.isDone()) {
+            walkingMonitorFuture.cancel(true);
+            log.info("Cancelled walking monitoring thread during plugin shutdown");
+        }
         if (updateTask != null) {
             updateTask.cancel(false);
             updateTask = null;
@@ -344,6 +351,15 @@ public class SchedulerPlugin extends Plugin {
         if (loginMonitor != null && loginMonitor.isAlive()) {
             loginMonitor.interrupt();
         }
+        // Cancel walking monitoring thread
+        if (walkingMonitorFuture != null && !walkingMonitorFuture.isDone()) {
+            walkingMonitorFuture.cancel(true);
+            log.info("Cancelled walking monitoring thread");
+        }
+        
+        // Stop the walker target to cancel any ongoing walking
+        Rs2Walker.setTarget(null);
+        log.debug("Cleared walker target during scheduler stop");
         Microbot.getClientThread().runOnClientThreadOptional(() -> {
             if (!currentState.isSchedulerActive()) {
                 return false; // Already stopped
@@ -887,7 +903,7 @@ public class SchedulerPlugin extends Plugin {
                 if (currentState != SchedulerState.STARTING_PLUGIN){
                     setState(SchedulerState.STARTING_PLUGIN);
                     // Stop conditions exist or enforcement disabled - proceed normally
-                    continueStartingPluginScheduleEntry(scheduledPlugin);
+                    continueStartingPluginScheduleEntry(scheduledPlugin, false);
                 }
                 return true;
             }
@@ -984,7 +1000,7 @@ public class SchedulerPlugin extends Plugin {
                             
                             log.info("Stop conditions added successfully for plugin: " + scheduledPlugin.getCleanName());
                             setState(SchedulerState.STARTING_PLUGIN);
-                            continueStartingPluginScheduleEntry(scheduledPlugin);
+                            continueStartingPluginScheduleEntry(scheduledPlugin, false);
                         }
                     });
                     conditionTimer.setRepeats(false);
@@ -993,7 +1009,7 @@ public class SchedulerPlugin extends Plugin {
             } else if (result == JOptionPane.NO_OPTION) {
                 setState(SchedulerState.STARTING_PLUGIN);
                 // User confirms to run without stop conditions
-                continueStartingPluginScheduleEntry(scheduledPlugin);
+                continueStartingPluginScheduleEntry(scheduledPlugin, false);
                 scheduledPlugin.setNeedsStopCondition(false);
                 log.info("User confirmed to run plugin without stop conditions: {}", scheduledPlugin.getCleanName());
             } else {
@@ -1023,22 +1039,30 @@ public class SchedulerPlugin extends Plugin {
             if (currentPlugin != null && !currentPlugin.isRunning()  && currentPlugin.equals(scheduledPlugin)) {
                 setState(SchedulerState.STARTING_PLUGIN);   
                 log.info("Continuing pending start for plugin: " + scheduledPlugin.getCleanName());
-                this.continueStartingPluginScheduleEntry(scheduledPlugin);                
+                this.continueStartingPluginScheduleEntry(scheduledPlugin, false);                
             }
         }
     }
     /**
      * Continues the plugin starting process after stop condition checks
      */
-    private void continueStartingPluginScheduleEntry(PluginScheduleEntry scheduledPlugin) {        
+    private void continueStartingPluginScheduleEntry(PluginScheduleEntry scheduledPlugin, boolean correctLocation) {        
         if (scheduledPlugin == null || (!currentState.equals(SchedulerState.STARTING_PLUGIN) && !currentState.equals(SchedulerState.WALKING_TO_COORDINATES))) {            
             setCurrentPlugin(null);
             setState(SchedulerState.SCHEDULING);                
             return;
         }
         
+        // Additional check: if we're not in an active scheduler state, don't proceed
+        if (!currentState.isSchedulerActive()) {
+            log.info("Scheduler not active, aborting plugin start for: {}", scheduledPlugin.getCleanName());
+            setCurrentPlugin(null);
+            setState(SchedulerState.SCHEDULING);
+            return;
+        }
         // Check if we need to walk to coordinates first
-        if (currentState.equals(SchedulerState.STARTING_PLUGIN) && scheduledPlugin.isUseSchedulerCoordinates()) {
+        if (currentState.equals(SchedulerState.STARTING_PLUGIN) && scheduledPlugin.isUseSchedulerCoordinates() && !correctLocation) {
+            Microbot.log("retriggering the startWalkingToCoordinates for plugin: " + scheduledPlugin.getCleanName());
             startWalkingToCoordinates(scheduledPlugin);
             return;
         }
@@ -1062,7 +1086,7 @@ public class SchedulerPlugin extends Plugin {
             }
           
             Microbot.getClientThread().invokeLater( ()->{
-               continueStartingPluginScheduleEntry(scheduledPlugin);
+               continueStartingPluginScheduleEntry(scheduledPlugin, false);
             });
             return false;
             
@@ -1091,6 +1115,15 @@ public class SchedulerPlugin extends Plugin {
                 }
             }
         }
+        // Cancel any walking monitoring thread
+        if (walkingMonitorFuture != null && !walkingMonitorFuture.isDone()) {
+            walkingMonitorFuture.cancel(true);
+            log.info("Cancelled walking monitoring thread during force stop");
+        }
+        
+        // Stop the walker target to cancel any ongoing walking
+        Rs2Walker.setTarget(null);
+        log.debug("Cleared walker target during force stop");
         updatePanels();
     }
 
@@ -1966,7 +1999,7 @@ public class SchedulerPlugin extends Plugin {
                             log.info("Login successful, finalizing plugin start: {}", currentPlugin.getName());
                             setState(SchedulerState.STARTING_PLUGIN);
                             Microbot.getClientThread().invokeLater(() -> {
-                                continueStartingPluginScheduleEntry(currentPlugin);
+                                continueStartingPluginScheduleEntry(currentPlugin, false);
                                 // setState(SchedulerState.RUNNING_PLUGIN);
                             });    
                             return;
@@ -2371,6 +2404,27 @@ public class SchedulerPlugin extends Plugin {
     private void setState(SchedulerState newState) {
         if (currentState != newState) {
             log.debug("Scheduler state changed: {} -> {}", currentState, newState);
+            
+            // Cancel walking monitoring thread if transitioning away from walking state
+            if (currentState == SchedulerState.WALKING_TO_COORDINATES && newState != SchedulerState.WALKING_TO_COORDINATES) {
+                if (walkingMonitorFuture != null && !walkingMonitorFuture.isDone()) {
+                    walkingMonitorFuture.cancel(true);
+                    log.debug("Cancelled walking monitoring thread due to state change: {} -> {}", currentState, newState);
+                }
+            }
+            
+            // Cancel walking thread if scheduler is being stopped or held
+            if (newState == SchedulerState.HOLD || !newState.isSchedulerActive()) {
+                if (walkingMonitorFuture != null && !walkingMonitorFuture.isDone()) {
+                    walkingMonitorFuture.cancel(true);
+                    log.debug("Cancelled walking monitoring thread due to scheduler stop");
+                }
+                
+                // Stop the walker target to cancel any ongoing walking
+                Rs2Walker.setTarget(null);
+                log.debug("Cleared walker target due to scheduler stop");
+            }
+            
             breakStartTime = Optional.empty();
             // Set additional state information based on context
             switch (newState) {
@@ -3086,8 +3140,9 @@ public class SchedulerPlugin extends Plugin {
      * Starts walking to the specified coordinates before starting the plugin
      */
     private void startWalkingToCoordinates(PluginScheduleEntry scheduledPlugin) {
+
         setState(SchedulerState.WALKING_TO_COORDINATES);
-        
+
         WorldPoint targetLocation = new WorldPoint(
             scheduledPlugin.getSchedulerX(), 
             scheduledPlugin.getSchedulerY(), 
@@ -3100,25 +3155,35 @@ public class SchedulerPlugin extends Plugin {
             
         // Check if we're already at the target location (within 3 tiles)
         if (Rs2Player.getWorldLocation().distanceTo(targetLocation) <= 3) {
-            log.info("Already at target location, proceeding to start plugin: {}", scheduledPlugin.getCleanName());
+            Microbot.log("Already at target location, proceeding to start plugin: {}", scheduledPlugin.getCleanName());
             setState(SchedulerState.STARTING_PLUGIN);
-            continueStartingPluginScheduleEntry(scheduledPlugin);
+            continueStartingPluginScheduleEntry(scheduledPlugin, true);
             return;
         }
         
+
         // Use Rs2Walker.walkWithState to actually start walking, not just set the target
         // This will start the actual walking behavior with clicks and movement
         log.info("Starting walking to coordinates: {}", targetLocation);
         
+        // Cancel any existing walking monitor
+        if (walkingMonitorFuture != null && !walkingMonitorFuture.isDone()) {
+            walkingMonitorFuture.cancel(true);
+        }
+        
         // Monitor the walking progress on a separate thread
-        CompletableFuture.runAsync(() -> {
+        walkingMonitorFuture = CompletableFuture.runAsync(() -> {
             try {
                 WalkerState initialState = Rs2Walker.walkWithState(targetLocation);
+                Microbot.log("Initial walking state: " + initialState);
                 if (initialState == WalkerState.UNREACHABLE || initialState == WalkerState.EXIT) {
                     log.warn("Cannot start walking to coordinates: {} for plugin: {}", initialState, scheduledPlugin.getCleanName());
                     Microbot.getClientThread().invokeLater(() -> {
-                        setCurrentPlugin(null);
-                        setState(SchedulerState.SCHEDULING);
+                        // Check if scheduler is still active and in correct state
+                        if (currentState.isSchedulerActive() && currentState == SchedulerState.WALKING_TO_COORDINATES) {
+                            setCurrentPlugin(null);
+                            setState(SchedulerState.SCHEDULING);
+                        }
                     });
                     return;
                 }
@@ -3126,8 +3191,15 @@ public class SchedulerPlugin extends Plugin {
                 if (initialState == WalkerState.ARRIVED) {
                     log.info("Already at target coordinates, starting plugin: {}", scheduledPlugin.getCleanName());
                     Microbot.getClientThread().invokeLater(() -> {
-                        setState(SchedulerState.STARTING_PLUGIN);
-                        continueStartingPluginScheduleEntry(scheduledPlugin);
+                        Microbot.log("WalkerState is ARRIVED, starting plugin: ",
+                         currentState.isSchedulerActive(),
+                         currentState == SchedulerState.WALKING_TO_COORDINATES);
+                        // Check if scheduler is still active and in correct state
+                        if (currentState.isSchedulerActive() && currentState == SchedulerState.WALKING_TO_COORDINATES) {
+                            Microbot.log("Continuing to start plugin after walking to coordinates");
+                            setState(SchedulerState.STARTING_PLUGIN);
+                            continueStartingPluginScheduleEntry(scheduledPlugin, false);
+                        }
                     });
                     return;
                 }
@@ -3138,32 +3210,47 @@ public class SchedulerPlugin extends Plugin {
                 
                 log.info("Walking initiated, monitoring progress...");
                 
-                while (!arrived && attempts < maxAttempts) {
+                while (!arrived && attempts < maxAttempts && !Thread.currentThread().isInterrupted()) {
                     Thread.sleep(1000);
                     attempts++;
+                    Microbot.log("attampt: " + attempts + " of " + maxAttempts);
+                    // Check if scheduler was stopped or state changed
+                    if (!currentState.isSchedulerActive() || currentState != SchedulerState.WALKING_TO_COORDINATES) {
+                        log.info("Scheduler state changed during walking, stopping walk monitor");
+                        return;
+                    }
                     
                     WorldPoint currentLocation = Rs2Player.getWorldLocation();
                     if (currentLocation != null && currentLocation.distanceTo(targetLocation) <= 3) {
                         arrived = true;
+                        Microbot.log("Arrived at target location: " + currentLocation);
                         break;
                     }
                     
                     if (ShortestPathPlugin.getPathfinder() != null && ShortestPathPlugin.getPathfinder().isDone()) {
                         if (currentLocation != null && currentLocation.distanceTo(targetLocation) <= 3) {
+                            Microbot.log("Pathfinder completed and arrived at target location: " + currentLocation);
                             arrived = true;
                             break;
                         } else {
+                            Microbot.log("Pathfinder completed but has not arrived to location: " + currentLocation, targetLocation);
                             log.warn("Pathfinder completed but not at destination. Current: {}, Target: {}, Distance: {}", 
                                 currentLocation, targetLocation, 
                                 currentLocation != null ? currentLocation.distanceTo(targetLocation) : "unknown");
                             
-                            WalkerState retryState = Rs2Walker.walkWithState(targetLocation);
-                            if (retryState == WalkerState.ARRIVED) {
-                                arrived = true;
-                                break;
-                            } else if (retryState == WalkerState.UNREACHABLE || retryState == WalkerState.EXIT) {
-                                log.error("Walking retry failed with state: {}", retryState);
-                                break;
+                            // Only retry if scheduler is still active and walking
+                            if (currentState.isSchedulerActive() && currentState == SchedulerState.WALKING_TO_COORDINATES) {
+                                WalkerState retryState = Rs2Walker.walkWithState(targetLocation);
+                                if (retryState == WalkerState.ARRIVED) {
+                                    arrived = true;
+                                    break;
+                                } else if (retryState == WalkerState.UNREACHABLE || retryState == WalkerState.EXIT) {
+                                    log.error("Walking retry failed with state: {}", retryState);
+                                    break;
+                                }
+                            } else {
+                                log.info("Scheduler no longer walking, stopping retry");
+                                return;
                             }
                         }
                     }
@@ -3175,26 +3262,46 @@ public class SchedulerPlugin extends Plugin {
                     }
                 }
                 
+                // Final check - only proceed if we're still in the right state
+                if (!currentState.isSchedulerActive() || currentState != SchedulerState.WALKING_TO_COORDINATES) {
+                    log.info("Scheduler state changed during walking completion, not starting plugin");
+                    return;
+                }
+                
                 if (arrived) {
                     log.info("Successfully arrived at target coordinates, starting plugin: {}", scheduledPlugin.getCleanName());
                     Microbot.getClientThread().invokeLater(() -> {
-                        setState(SchedulerState.STARTING_PLUGIN);
-                        continueStartingPluginScheduleEntry(scheduledPlugin);
+                        // Final validation before starting plugin
+                        if (currentState.isSchedulerActive() && currentState == SchedulerState.WALKING_TO_COORDINATES) {
+                            setState(SchedulerState.STARTING_PLUGIN);
+                            continueStartingPluginScheduleEntry(scheduledPlugin, false);
+                        } else {
+                            log.info("Scheduler state changed, not starting plugin after walking");
+                        }
                     });
-                } else {
+                } else if (!Thread.currentThread().isInterrupted()) {
                     log.error("Failed to reach target coordinates within timeout for plugin: {}", 
                         scheduledPlugin.getCleanName());
                     Microbot.getClientThread().invokeLater(() -> {
-                        setCurrentPlugin(null);
-                        setState(SchedulerState.SCHEDULING);
+                        // Only change state if still walking
+                        if (currentState.isSchedulerActive() && currentState == SchedulerState.WALKING_TO_COORDINATES) {
+                            setCurrentPlugin(null);
+                            setState(SchedulerState.SCHEDULING);
+                        }
                     });
                 }
+            } catch (InterruptedException e) {
+                log.info("Walking monitor thread was interrupted for plugin: {}", scheduledPlugin.getCleanName());
+                Thread.currentThread().interrupt(); // Restore interrupted status
             } catch (Exception e) {
                 log.error("Error monitoring walking progress for plugin {}: {}", 
                     scheduledPlugin.getCleanName(), e.getMessage());
                 Microbot.getClientThread().invokeLater(() -> {
-                    setCurrentPlugin(null);
-                    setState(SchedulerState.SCHEDULING);
+                    // Only change state if still walking
+                    if (currentState.isSchedulerActive() && currentState == SchedulerState.WALKING_TO_COORDINATES) {
+                        setCurrentPlugin(null);
+                        setState(SchedulerState.SCHEDULING);
+                    }
                 });
             }
         });
