@@ -3113,51 +3113,76 @@ public class SchedulerPlugin extends Plugin {
         // Monitor the walking progress on a separate thread
         CompletableFuture.runAsync(() -> {
             try {
-                // Start walking using walkWithState which triggers actual movement
-                WalkerState walkerState = Rs2Walker.walkWithState(targetLocation);
+                WalkerState initialState = Rs2Walker.walkWithState(targetLocation);
+                if (initialState == WalkerState.UNREACHABLE || initialState == WalkerState.EXIT) {
+                    log.warn("Cannot start walking to coordinates: {} for plugin: {}", initialState, scheduledPlugin.getCleanName());
+                    Microbot.getClientThread().invokeLater(() -> {
+                        setCurrentPlugin(null);
+                        setState(SchedulerState.SCHEDULING);
+                    });
+                    return;
+                }
                 
-                // Wait for walking to complete or fail
+                if (initialState == WalkerState.ARRIVED) {
+                    log.info("Already at target coordinates, starting plugin: {}", scheduledPlugin.getCleanName());
+                    Microbot.getClientThread().invokeLater(() -> {
+                        setState(SchedulerState.STARTING_PLUGIN);
+                        continueStartingPluginScheduleEntry(scheduledPlugin);
+                    });
+                    return;
+                }
+                
                 boolean arrived = false;
                 int attempts = 0;
-                int maxAttempts = 300; // 5 minutes at 1 second intervals
+                int maxAttempts = 300; 
+                
+                log.info("Walking initiated, monitoring progress...");
                 
                 while (!arrived && attempts < maxAttempts) {
                     Thread.sleep(1000);
                     attempts++;
                     
-                    // Check current walker state
-                    walkerState = Rs2Walker.walkWithState(targetLocation);
-                    
-                    // Check if we've arrived at the destination
                     WorldPoint currentLocation = Rs2Player.getWorldLocation();
                     if (currentLocation != null && currentLocation.distanceTo(targetLocation) <= 3) {
                         arrived = true;
                         break;
                     }
                     
-                    // Check walker state for completion or failure
-                    if (walkerState == WalkerState.ARRIVED) {
-                        arrived = true;
-                        break;
-                    } else if (walkerState == WalkerState.UNREACHABLE || walkerState == WalkerState.EXIT) {
-                        log.warn("Walking failed with state: {} for plugin: {}", walkerState, scheduledPlugin.getCleanName());
-                        break;
+                    if (ShortestPathPlugin.getPathfinder() != null && ShortestPathPlugin.getPathfinder().isDone()) {
+                        if (currentLocation != null && currentLocation.distanceTo(targetLocation) <= 3) {
+                            arrived = true;
+                            break;
+                        } else {
+                            log.warn("Pathfinder completed but not at destination. Current: {}, Target: {}, Distance: {}", 
+                                currentLocation, targetLocation, 
+                                currentLocation != null ? currentLocation.distanceTo(targetLocation) : "unknown");
+                            
+                            WalkerState retryState = Rs2Walker.walkWithState(targetLocation);
+                            if (retryState == WalkerState.ARRIVED) {
+                                arrived = true;
+                                break;
+                            } else if (retryState == WalkerState.UNREACHABLE || retryState == WalkerState.EXIT) {
+                                log.error("Walking retry failed with state: {}", retryState);
+                                break;
+                            }
+                        }
                     }
                     
-                    // Continue walking if still moving
-                    if (walkerState == WalkerState.MOVING) {
-                        continue;
+                    if (attempts % 30 == 0) {
+                        log.info("Walking progress - Attempt {}/{}, Current: {}, Target: {}, Distance: {}", 
+                            attempts, maxAttempts, currentLocation, targetLocation,
+                            currentLocation != null ? currentLocation.distanceTo(targetLocation) : "unknown");
                     }
                 }
                 
                 if (arrived) {
-                    log.info("Arrived at target coordinates, starting plugin: {}", scheduledPlugin.getCleanName());
+                    log.info("Successfully arrived at target coordinates, starting plugin: {}", scheduledPlugin.getCleanName());
                     Microbot.getClientThread().invokeLater(() -> {
                         setState(SchedulerState.STARTING_PLUGIN);
                         continueStartingPluginScheduleEntry(scheduledPlugin);
                     });
                 } else {
-                    log.error("Failed to reach target coordinates within timeout or walking was cancelled for plugin: {}", 
+                    log.error("Failed to reach target coordinates within timeout for plugin: {}", 
                         scheduledPlugin.getCleanName());
                     Microbot.getClientThread().invokeLater(() -> {
                         setCurrentPlugin(null);
@@ -3182,7 +3207,6 @@ public class SchedulerPlugin extends Plugin {
      */
     private void registerStopCompletionCallback(PluginScheduleEntry entry) {
         entry.setStopCompletionCallback((stopEntry, wasSuccessful) -> {
-            // Save scheduled plugins state when a plugin stop is completed
             saveScheduledPlugins();
             log.info("\n\t -Saved scheduled plugins after stop completion for plugin \n\t\t'{}'", 
                 stopEntry.getName());
