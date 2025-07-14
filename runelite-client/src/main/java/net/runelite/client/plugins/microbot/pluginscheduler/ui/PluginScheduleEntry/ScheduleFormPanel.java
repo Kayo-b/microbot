@@ -192,7 +192,7 @@ public class ScheduleFormPanel extends JPanel {
         // Add listener to clear table selection when ComboBox changes
         pluginComboBox.addActionListener(e -> {
             if (pluginComboBox.getSelectedItem() != null && selectionChangeListener != null && isUserAction) {
-                selectionChangeListener.run();
+                //selectionChangeListener.run();
             }
         });
 
@@ -241,8 +241,9 @@ public class ScheduleFormPanel extends JPanel {
         allowContinueCheckbox = new JCheckBox("Allow continue");
         allowContinueCheckbox.setSelected(false);
         allowContinueCheckbox.setToolTipText(
-            "<html>When enabled, the plugin will be allowed to continue running after its scheduled time.<br>" +
-            "This can be useful for long-running tasks that should not be interrupted.</html>");
+            "<html>When enabled, the plugin will automatically resume after being interrupted by a higher-priority plugin.<br>" +
+            "This preserves the plugin's state and progress toward stop conditions without needing to re-evaluate start conditions.<br>" +
+            "Especially important for default plugins (priority 0) that should continue after higher-priority tasks finish.</html>");
         allowContinueCheckbox.setForeground(Color.WHITE);
         allowContinueCheckbox.setBackground(ColorScheme.DARKER_GRAY_COLOR);
         checkboxesPanel.add(allowContinueCheckbox);
@@ -449,7 +450,10 @@ public class ScheduleFormPanel extends JPanel {
         gbc.gridy = 6;
         gbc.gridwidth = 2;
         selectedPluginAllowContinueCheckbox = createPropertyCheckbox("Allow Continue After Interruption", 
-            "When enabled, allows the plugin to continue running after an interruption");
+            "<html>When enabled, the plugin will automatically resume after being interrupted by a higher-priority plugin.<br>" +
+            "This preserves all progress made toward stop conditions without resetting start conditions.<br>" +
+            "For default plugins (priority 0) in a cycle, this determines whether the plugin keeps its place<br>" +
+            "or must compete with other default plugins based on run counts when it's time to select the next plugin.</html>");
         editorPanel.add(selectedPluginAllowContinueCheckbox, gbc);
         
         // Plugin run statistics
@@ -1137,7 +1141,7 @@ public PluginScheduleEntry getPluginFromForm(PluginScheduleEntry existingPlugin)
                 JOptionPane.showMessageDialog(
                     SwingUtilities.getWindowAncestor(this),
                     result,
-                    "Cannot Start Plugin",
+                    "Cannot Start Plugin immediately, update only main time start condition",
                     JOptionPane.WARNING_MESSAGE
                 );
             }
