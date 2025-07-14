@@ -66,6 +66,17 @@ public class AutoSmeltingPlugin extends Plugin implements SchedulablePlugin {
             }
         }
     }
+    
+    @Subscribe
+    @Override
+    public void onPluginScheduleEntrySoftStopEvent(PluginScheduleEntrySoftStopEvent event) {
+        if (event.getPlugin() == this) {
+            // Cleanup operations
+            Microbot.getClientThread().invokeLater(() -> {
+                Microbot.stopPlugin(this);
+            });
+        }
+    }
 
     @Override
     protected void startUp() throws AWTException {
